@@ -1,37 +1,56 @@
 # RAMP: Recursive Adapter-based Model Expansion
 
-RAMP tests a simple hypothesis: **a shallow Transformer with unique weights can be distilled into a deeper model that repeatedly reuses one physical decoder block, while lightweight depth-specific LoRA adapters provide per-layer variation.**
+RAMP studies whether a pretrained Transformer can trade **unique parameter depth** for **recursive compute depth**.
 
-The first prototype uses `google/functiongemma-270m-it` because it is small and has an explicit tool-calling task. FunctionGemma has 18 decoder layers; the default RAMP student replaces them with **36 recursive steps**.
+The first experiment uses `google/functiongemma-270m-it`:
 
 ```text
-Teacher:  L1 -> L2 -> ... -> L18
+Teacher:  T1 -> T2 -> ... -> T18
 
-Student:  (W + A1B1) -> (W + A2B2) -> ... -> (W + A36B36)
-                    same shared W at every step
+Student:  S1 -> S2 -> ... -> S36
+          \___________________/
+             one shared W
+
+Si = shared W + depth-specific LoRA_i
 ```
 
-The long-term hardware target is weight-stationary inference: keep the large shared weight `W` in on-chip SRAM and change only the much smaller depth-specific adapters.
+The hardware motivation is weight-stationary inference: keep the large shared decoder weight in on-chip SRAM and stream only small per-depth adapters while hidden states iterate through the same physical compute block.
 
-## Current prototype
+## Prototype design
 
-Only four files are used intentionally. `ramp.py` contains the architecture conversion and `train.py` contains the toy teacher-student experiment.
+The repository intentionally stays small:
 
-The implementation currently:
+- `ramp.py`: recursive shared decoder and depth-specific LoRA
+- `train.py`: FunctionGemma teacher-student experiment
+- `requirements.txt`: pinned dependencies
 
-- averages the pretrained 18 decoder blocks to initialize one shared block,
-- reuses that block for 36 recursive steps,
-- attaches a separate low-rank delta to every linear projection at each step,
-- freezes embeddings and the LM head,
-- trains the shared block + adapters using supervised tool-call loss and teacher-logit KD,
-- uses full attention at every recursive step,
-- disables KV cache because one physical attention block is reused across logical depths.
+FunctionGemma has 18 Gemma3 decoder layers with a repeating **5 sliding-attention + 1 full-attention** structure. RAMP does not replace this with arbitrary full attention. The teacher role of each layer is stretched across the deeper student. With depth 36, every teacher layer is represented by two recursive student steps.
 
-The last two points are deliberate prototype simplifications, not final architectural decisions.
+```text
+Teacher layer Ti  ->  Student steps S(2i-1), S(2i)
+Teacher hidden Ti ->  distillation target at S(2i)
+```
 
-## Run
+The physical shared block is initialized by the parameter-wise mean of the 18 pretrained decoder blocks. For stable depth expansion, recursive residual updates are scaled by
 
-FunctionGemma may require accepting Google's Gemma license on Hugging Face and logging in first.
+```text
+residual_scale = teacher_depth / student_depth
+```
+
+so the default 18 -> 36 conversion starts at `0.5` residual strength per recursive step.
+
+Each linear projection in the shared attention/MLP block receives an independent LoRA delta for every logical depth. Embedding and LM-head weights remain frozen. The shared base can either be trained with a small learning rate or frozen for an adapter-only ablation.
+
+Training uses two losses:
+
+1. supervised causal-LM loss on correctly formatted FunctionGemma tool calls,
+2. hidden-state distillation between every teacher layer and its corresponding RAMP boundary.
+
+Training examples are formatted through FunctionGemma's own `apply_chat_template(..., tools=...)`; tool-call strings are not manually concatenated.
+
+## Install
+
+Accept the Gemma license for `google/functiongemma-270m-it` on Hugging Face first.
 
 ```bash
 git clone https://github.com/HigherIdeal/RAMP.git
@@ -39,32 +58,44 @@ cd RAMP
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-huggingface-cli login
-python train.py
+hf auth login
 ```
 
-Default settings are chosen for a first RTX 3050 experiment:
+The code is pinned to `transformers==4.57.3` because RAMP directly follows that Gemma3 decoder interface.
+
+## Run
+
+Default experiment:
 
 ```bash
-python train.py --depth 36 --rank 8 --steps 200 --max-length 128
+python train.py --depth 36 --rank 8 --steps 200
 ```
 
-For a smaller first smoke test:
+Adapter-only smoke test:
 
 ```bash
-python train.py --depth 24 --rank 4 --steps 20 --max-length 96 --freeze-shared-base
+python train.py --depth 36 --rank 4 --steps 20 --freeze-shared-base
 ```
 
-`train.py` evaluates four held-out tool-selection prompts before and after training and saves only the physical shared decoder block plus its step adapters to `ramp_shared_layer.pt`.
+The default maximum sequence length is 512. The script refuses to truncate a formatted function call; if a tool schema makes a sample longer, increase `--max-length` instead.
 
-## Research questions
+The teacher is loaded first, evaluated, and used to precompute layer-wise distillation targets on CPU. It is then removed from GPU memory before the RAMP student is loaded, which keeps the experiment practical on a small GPU such as an RTX 3050.
 
-The immediate experiment is not intended to prove SRAM efficiency by itself. It tests whether parameter capacity can be traded for recursive compute without destroying tool-use capability. The next comparisons should be:
+The output checkpoint `ramp.pt` stores only the shared decoder block, all depth-specific adapters, and the RAMP structural metadata. The unchanged FunctionGemma embedding/LM head are not duplicated in the checkpoint.
 
-1. original 18-layer FunctionGemma teacher,
-2. 18-step shared-weight RAMP,
-3. 36-step RAMP,
-4. 54/72-step RAMP,
-5. rank 0/4/8/16 adapters.
+## Immediate experiments
 
-Primary metrics should be tool-call accuracy, trainable/physical parameter count, FLOPs, latency, and estimated off-chip weight traffic. If the deeper shared student retains teacher capability, SRAM residency and accelerator mapping become the next stage.
+The first useful comparison is:
+
+| Model | Logical depth | Physical decoder blocks | Adapter rank |
+|---|---:|---:|---:|
+| FunctionGemma teacher | 18 | 18 | - |
+| RAMP-18 | 18 | 1 | 4 / 8 / 16 |
+| RAMP-36 | 36 | 1 | 4 / 8 / 16 |
+| RAMP-54 | 54 | 1 | 4 / 8 / 16 |
+
+Measure tool-call accuracy, physical parameter count, adapter parameter count, latency, FLOPs, and estimated off-chip weight traffic. The central question is whether deeper recursive compute can recover the capability lost by replacing many unique decoder blocks with one SRAM-resident shared block.
+
+## Current limitation
+
+KV cache is intentionally disabled. A normal Transformer cache is indexed by physical layer, whereas RAMP reuses one physical attention block across many logical depths. Correct cache semantics therefore require a separate logical-depth-aware cache design and should not be hidden behind the first proof-of-concept.
