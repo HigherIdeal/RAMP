@@ -59,7 +59,7 @@ public class MainActivity extends Activity {
         scroll.addView(root);
 
         TextView title = new TextView(this);
-        title.setText("PDF Watermark Cleaner v2");
+        title.setText("PDF Watermark Cleaner v2.1");
         title.setTextSize(24);
         title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
         root.addView(title);
@@ -123,7 +123,21 @@ public class MainActivity extends Activity {
     private void openPdf() {
         Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT);
         i.addCategory(Intent.CATEGORY_OPENABLE);
-        i.setType("application/pdf");
+
+        // Some Android/Samsung document providers save a perfectly valid PDF with a
+        // generic MIME type (e.g. application/octet-stream). Restricting the picker
+        // to application/pdf can therefore make that PDF disappear from the next open.
+        // Use a broader picker filter and verify the actual PDF signature after selection.
+        i.setType("*/*");
+        i.putExtra(Intent.EXTRA_MIME_TYPES, new String[]{
+                "application/pdf",
+                "application/x-pdf",
+                "application/acrobat",
+                "text/pdf",
+                "text/x-pdf",
+                "application/octet-stream"
+        });
+        i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
         startActivityForResult(i, REQ_OPEN);
     }
 
@@ -131,7 +145,12 @@ public class MainActivity extends Activity {
         super.onActivityResult(requestCode, resultCode, data);
         if (resultCode != RESULT_OK || data == null || data.getData() == null) return;
         if (requestCode == REQ_OPEN) {
-            inputUri = data.getData();
+            Uri selected = data.getData();
+            if (!looksLikePdf(selected)) {
+                status.setText("선택한 파일이 PDF 형식이 아닙니다.");
+                return;
+            }
+            inputUri = selected;
             try {
                 getContentResolver().takePersistableUriPermission(inputUri, Intent.FLAG_GRANT_READ_URI_PERMISSION);
             } catch (Exception ignored) {}
@@ -143,6 +162,10 @@ public class MainActivity extends Activity {
             status.setText("선택됨: " + displayName(inputUri) + "\n'워터마크 객체 분석'을 누르세요.");
         } else if (requestCode == REQ_SAVE) {
             final Uri outUri = data.getData();
+            try {
+                getContentResolver().takePersistableUriPermission(outUri,
+                        Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+            } catch (Exception ignored) {}
             performSave(outUri);
         }
     }
@@ -208,6 +231,8 @@ public class MainActivity extends Activity {
         String name = displayName(inputUri);
         if (name.toLowerCase().endsWith(".pdf")) name = name.substring(0, name.length() - 4);
         i.putExtra(Intent.EXTRA_TITLE, name + "_clean_object.pdf");
+        i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION |
+                Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
         startActivityForResult(i, REQ_SAVE);
     }
 
@@ -224,15 +249,39 @@ public class MainActivity extends Activity {
                     byte[] buf = new byte[32768];
                     int n;
                     while ((n = in.read(buf)) >= 0) out.write(buf, 0, n);
+                    out.flush();
                 }
                 runOnUiThread(() -> setBusy(false,
                         "저장 완료. 제거된 객체/블록: " + removed + "개\n텍스트·벡터·이미지는 래스터화하지 않았습니다."));
             } catch (Exception e) {
                 runOnUiThread(() -> setBusy(false, "저장 실패: " + cleanMessage(e)));
             } finally {
+                //noinspection ResultOfMethodCallIgnored
                 tempOut.delete();
             }
         });
+    }
+
+    private boolean looksLikePdf(Uri uri) {
+        if (uri == null) return false;
+        try (InputStream in = getContentResolver().openInputStream(uri)) {
+            if (in == null) return false;
+            byte[] head = new byte[1024];
+            int n = in.read(head);
+            if (n <= 0) return false;
+            byte[] sig = new byte[]{'%', 'P', 'D', 'F', '-'};
+            for (int i = 0; i <= n - sig.length; i++) {
+                boolean match = true;
+                for (int j = 0; j < sig.length; j++) {
+                    if (head[i + j] != sig[j]) {
+                        match = false;
+                        break;
+                    }
+                }
+                if (match) return true;
+            }
+        } catch (Exception ignored) {}
+        return false;
     }
 
     private File copyUriToCache(Uri uri, String name) throws Exception {
