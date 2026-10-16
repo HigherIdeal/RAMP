@@ -1,0 +1,30 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.higherideal.pdfcleaner'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'com.higherideal.pdfcleaner'
+        minSdk 24
+        targetSdk 35
+        versionCode 2
+        versionName '2.0-object'
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+        }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+}
+
+dependencies {
+    implementation 'com.tom-roush:pdfbox-android:2.0.27.0'
+}
