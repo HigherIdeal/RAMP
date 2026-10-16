@@ -1,7 +1,7 @@
-name: Temp PDF Watermark Cleaner v2 build
+name: Temp PDF Watermark Cleaner v2.1 build
 on:
   push:
-    branches: [ main ]
+    branches: [ tmp-pdf-watermark-cleaner-2-1 ]
     paths:
       - 'tools/pdf-watermark-cleaner-v2/**'
       - '.github/workflows/tmp-pdf-watermark-cleaner-v2.yml'
@@ -26,9 +26,9 @@ jobs:
       - name: Build debug APK
         run: gradle -p tools/pdf-watermark-cleaner-v2 :app:assembleDebug --stacktrace
       - name: Prepare artifact
-        run: cp tools/pdf-watermark-cleaner-v2/app/build/outputs/apk/debug/app-debug.apk PDF_Watermark_Cleaner_v2_Object.apk
+        run: cp tools/pdf-watermark-cleaner-v2/app/build/outputs/apk/debug/app-debug.apk PDF_Watermark_Cleaner_v2_1.apk
       - uses: actions/upload-artifact@v4
         with:
-          name: PDF_Watermark_Cleaner_v2_Object
-          path: PDF_Watermark_Cleaner_v2_Object.apk
+          name: PDF_Watermark_Cleaner_v2_1
+          path: PDF_Watermark_Cleaner_v2_1.apk
           if-no-files-found: error
