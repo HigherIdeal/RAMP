@@ -1,0 +1,65 @@
+{
+  "steps": 200,
+  "runs": {
+    "depth18_rank4_frozen": {
+      "status": "complete",
+      "teacher_tool": 7,
+      "teacher_exact": 7,
+      "eval_total": 8,
+      "before_tool": 0,
+      "after_tool": 1,
+      "after_exact": 0,
+      "train_probe_tool": 2,
+      "train_probe_exact": 2,
+      "parameters": {
+        "physical": 174295680,
+        "trainable": 949248,
+        "adapter": 949248
+      },
+      "first_loss": 35.17806625366211,
+      "last_loss": 0.9659440517425537,
+      "training_seconds": 90.27875080006197,
+      "peak_training_vram_mib": 710.15966796875
+    },
+    "depth36_rank2_frozen": {
+      "status": "complete",
+      "teacher_tool": 7,
+      "teacher_exact": 7,
+      "eval_total": 8,
+      "before_tool": 0,
+      "after_tool": 2,
+      "after_exact": 0,
+      "train_probe_tool": 2,
+      "train_probe_exact": 1,
+      "parameters": {
+        "physical": 174295680,
+        "trainable": 949248,
+        "adapter": 949248
+      },
+      "first_loss": 34.1915397644043,
+      "last_loss": 1.0513243675231934,
+      "training_seconds": 162.2656976999715,
+      "peak_training_vram_mib": 967.20361328125
+    },
+    "depth36_rank2_shared": {
+      "status": "complete",
+      "teacher_tool": 7,
+      "teacher_exact": 7,
+      "eval_total": 8,
+      "before_tool": 0,
+      "after_tool": 2,
+      "after_exact": 0,
+      "train_probe_tool": 2,
+      "train_probe_exact": 2,
+      "parameters": {
+        "physical": 174295680,
+        "trainable": 6522880,
+        "adapter": 949248
+      },
+      "first_loss": 34.1915397644043,
+      "last_loss": 0.7565021514892578,
+      "training_seconds": 176.02849319996312,
+      "peak_training_vram_mib": 1180.58154296875
+    }
+  }
+}

@@ -1,0 +1,4 @@
+run,status,teacher_tool,teacher_exact,eval_total,before_tool,after_tool,after_exact,train_probe_tool,train_probe_exact,first_loss,last_loss,training_seconds,peak_training_vram_mib,physical,trainable,adapter
+depth18_rank4_frozen,complete,7,7,8,0,1,0,2,2,35.17806625366211,0.9659440517425537,90.27875080006197,710.15966796875,174295680,949248,949248
+depth36_rank2_frozen,complete,7,7,8,0,2,0,2,1,34.1915397644043,1.0513243675231934,162.2656976999715,967.20361328125,174295680,949248,949248
+depth36_rank2_shared,complete,7,7,8,0,2,0,2,2,34.1915397644043,0.7565021514892578,176.02849319996312,1180.58154296875,174295680,6522880,949248
